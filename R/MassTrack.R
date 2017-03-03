@@ -43,25 +43,25 @@ PTL.headers <- c("ptlno", "x", "y", "z_off", "z",
 #' @param truncate if TRUE, once a particle is completely drained, further
 #' trajectory information is not returned with the result
 #' @param confined not yet implemented
-#' @param outflux return cell referenced information about where the mass
+#' @param outmass return cell referenced information about where the mass
 #' is abstracted?
 #' @param loss return information about where particle mass is not released
-#' @param outflux.array
+#' @param outmass.array
 #' logical \code{[1]};
-#' if outflux = TRUE, then outflux.array = TRUE signals that the abstracted
+#' if outmass = TRUE, then outmass.array = TRUE signals that the abstracted
 #'  mass information should be returned in an array rather than a data.table
-#' @param tlumpoutflux
+#' @param tlumpoutmass
 #' logical \code{[1]};
-#' should the outflux array only show the spatial cell location (TRUE), or
+#' should the outmass array only show the spatial cell location (TRUE), or
 #'  show during which time step the abstractions occurred as well (in which
-#'  case the outflux array will be four-dimensional and potentially very
+#'  case the outmass array will be four-dimensional and potentially very
 #'  large)
 #' @param linear.decay
 #' double \code{[1]};
 #' linear decay constant, defaults to 0 which is no decay
 #' @param react.loss
 #' logical \code{[1]};
-#' similar to outflux, save locational reaction loss information?
+#' similar to outmass, save locational reaction loss information?
 #' @param end.t
 #' double \code{[1]};
 #' specify the end time of the simulation; if missing, it will be inferred
@@ -72,12 +72,12 @@ PTL.headers <- c("ptlno", "x", "y", "z_off", "z",
 #' @return
 #' A list of results:
 #' $trace, data.table: the pathline data table with new columns for mass
-#'  and, if \code{outflux.array = FALSE}, mass loss and reactive mass
+#'  and, if \code{outmass.array = FALSE}, mass loss and reactive mass
 #'  loss\cr
-#' $outflux, numeric array: if \code{outflux = TRUE} and
-#'  \code{outflux.array = TRUE}, the mass removed from the system by
-#'  column, row and layer and, if \code{tlumpoutflux = FALSE}, time step\cr
-#' $react.loss, numeric array: as with outflux but for reactive loss\cr
+#' $outmass, numeric array: if \code{outmass = TRUE} and
+#'  \code{outmass.array = TRUE}, the mass removed from the system by
+#'  column, row and layer and, if \code{tlumpoutmass = FALSE}, time step\cr
+#' $react.loss, numeric array: as with outmass but for reactive loss\cr
 #' $loss, numeric \code{[Np]}: mass which is lost otherwise (e.g. particle
 #'  wasn't released)
 #'
@@ -89,13 +89,72 @@ PTL.headers <- c("ptlno", "x", "y", "z_off", "z",
 #' @export
 #'
 #' @examples
-#' # to follow
+#' # MODFLOW NetCDF dataset
+#' library("RNetCDF")
+#' mfdata <- open.nc(system.file("masstrack_mf_demo.nc",
+#'                               package = "MassTrack"))
+#'
+#' # pathline file
+#' library("data.table")
+#' ptl <- fread(system.file("masstrack_mp_demo.ptl",
+#'                          package = "MassTrack"), skip = 1L)
+#'
+#' # run MassTrack
+#' # - this will generate a new NetCDF for the water top (see wtop
+#' #    argument)
+#' # - a simple example in which all particles start with mass 1, and there
+#' #    is no degradationg
+#' mt <- MassTrack(ptl, mfdata, "MT_EXAMPLE_wtop.nc", phi = .1, end.t = 1500)
+#'
+#' # plot results
+#' # - plot MODFLOW model boundaries
+#' library("Rflow")
+#' MFimage(is.na(var.get.nc(mfdata, "Head",
+#'                          c(NA, NA, 1L, 1L),
+#'                          c(NA, NA, 1L, 1L))),
+#'         gccs(mfdata), grcs(mfdata), 0:1,
+#'         c("transparent", "grey"), asp = 1)
+#'
+#' MFimage(var.get.nc(mfdata, "ConstantHead",
+#'                    c(NA, NA, 1L, 1L),
+#'                    c(NA, NA, 1L, 1L)) != 0,
+#'         gccs(mfdata), grcs(mfdata), 0:1,
+#'         c("transparent", "blue"), add = TRUE)
+#'
+#' MFimage(var.get.nc(mfdata, "RiverLeakage",
+#'                    c(NA, NA, 1L, 1L),
+#'                    c(NA, NA, 1L, 1L)) != 0,
+#'         gccs(mfdata), grcs(mfdata), 0:1,
+#'         c("transparent", "green"), add = TRUE)
+#'
+#' MFimage(var.get.nc(mfdata, "Wells",
+#'                    c(NA, NA, 1L, 1L),
+#'                    c(NA, NA, 1L, 1L)) != 0,
+#'         gccs(mfdata), grcs(mfdata), 0:1,
+#'         c("transparent", "red"), add = TRUE)
+#'
+#' # plot pathlines
+#' # - note that data.table subsetting often doesn't work with lines
+#' ptl <- fread(system.file("masstrack_mp_demo.ptl",
+#'                          package = "MassTrack"), skip = 1L)
+#' setnames(ptl, c("ptlno", "x", "y", "z_off", "z",
+#'                 "t", "C", "R", "L", "timestep"))
+#'
+#' for(p in unique(ptl$ptlno)) ptl[ptlno == p, lines(x, y)]
+#'
+#' # plot particle masses
+#' mt$traces[, points(x, y, pch = 16L, col = "darkgreen", cex = m)]
+#'
+#' # you can save the results to file using rlist::list.save, for example
+#' \dontrun{
+#'   rlist::list.save(mt, "MT_EXAMPLE.rds")
+#' }
 #'
 MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
                       phi, m0 = 1,
                       retain.storage = TRUE, truncate = TRUE,
-                      confined = FALSE, outflux = TRUE, loss = TRUE,
-                      outflux.array = TRUE, tlumpoutflux = FALSE,
+                      confined = FALSE, outmass = TRUE, loss = TRUE,
+                      outmass.array = FALSE, tlumpoutmass = FALSE,
                       linear.decay = FALSE, react.loss = TRUE, end.t){
   gwnc <- switch(class(gwnc),
                  NetCDF = gwnc,
@@ -109,13 +168,13 @@ MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
   spds <- ds[1:3]
   nts <- ds[4L]
 
-  if(outflux && outflux.array){
-    out <- array(0, if(tlumpoutflux) spds else ds)
+  if(outmass && outmass.array){
+    out <- array(0, if(tlumpoutmass) spds else ds)
   }
   if(!linear.decay) react.loss <- FALSE
 
-  if(react.loss && outflux.array){
-    outr <- array(0, if(tlumpoutflux) spds else ds)
+  if(react.loss && outmass.array){
+    outr <- array(0, if(tlumpoutmass) spds else ds)
   }
 
   # get water top, write to new NetCDF if necessary
@@ -136,7 +195,7 @@ MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
         MoreArgs = list(ncfile = wtop))
 
     var.def.nc(wtop, "wtop", "NC_FLOAT", dtits)
-    att.copy.nc(gwdata, "Head", "missing_value", wtop, "wtop")
+    att.copy.nc(gwnc, "Head", "missing_value", wtop, "wtop")
 
     # lt is layer top
     lt <- c(var.get.nc(gwnc, "elev", count = spds))
@@ -186,7 +245,7 @@ MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
       if(retain.storage) "Storage")
   } %chin% pnm)]
 
-  CRLts <- as.matrix(ptl[, list(C, R, L, timestep)])
+  CRLts <- as.matrix(ptl[, .(C, R, L, timestep)])
 
   ## exitting and entering flow
   # minimum and maximum C, R, L and ts indices
@@ -326,7 +385,7 @@ MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
 
   ## apply MassTrack calculations on each pathline
   # .N is the number of rows within the ptlno group
-  ptl[, c("m", if(outflux) "ml", if(react.loss) "mrl") := if(identical(.N, 1L)){
+  ptl[, c("m", if(outmass) "ml", if(react.loss) "mrl") := if(identical(.N, 1L)){
     # case in which there is only one entry for the particle (probably instant capture)
     pVdiff <- Qimb*totdur/V
 
@@ -334,7 +393,7 @@ MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
     m1 <- ifelse(m1 < 0, 0, m1) # that's all folks (mass completely drained if m1 < 0, so reset to 0)
 
     # mass lost
-    if(outflux){
+    if(outmass){
       ml1nd <- -(m1 - m0p[ptlno])
       ml1 <- ml1nd*exp(-linear.decay*totdur/exp(1))
     }
@@ -346,10 +405,10 @@ MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
     }else m1nd <- 0
 
     # mass loss due to reaction
-    if(react.loss) mrl1 <- m1nd - m1 + if(outflux) ml1nd - ml1 else 0
+    if(react.loss) mrl1 <- m1nd - m1 + if(outmass) ml1nd - ml1 else 0
 
     # return final mass and mass loss
-    mget(c("m1", if(outflux) "ml1", if(react.loss) "mrl1"))
+    mget(c("m1", if(outmass) "ml1", if(react.loss) "mrl1"))
   }else{
 
     durs <- diff(c(t, maxt)) #amount of time spent on each step
@@ -359,7 +418,7 @@ MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
     if(any(m1 < 0)) m1[min(which(m1 < 0)):.N] <- 0 #all mass depleted when m1 < 0: set this and following to 0
 
     #update output mass
-    if(outflux){
+    if(outmass){
       ml1nd <- -diff(c(m0p[ptlno], m1))
       ml1 <- ml1nd*exp(-linear.decay*((c(t[-1L], maxt)*(exp(1) - 1) + t)/exp(1) - t[1L]))
     }
@@ -370,22 +429,22 @@ MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
       m1 <- m1nd*exp(-linear.decay*(t - t[1L]))
     }else m1nd <- 0
 
-    if(react.loss) mrl1 <- diff(c(0, m1nd - m1 + if(outflux) ml1nd - ml1 else 0))
+    if(react.loss) mrl1 <- diff(c(0, m1nd - m1 + if(outmass) ml1nd - ml1 else 0))
 
     #return mass track
-    mget(c("m1", if(outflux) "ml1", if(react.loss) "mrl1"))
+    mget(c("m1", if(outmass) "ml1", if(react.loss) "mrl1"))
   }, by = ptlno]
 
-  # apply mass loss to outflux array
-  if(outflux && outflux.array){
-    if(tlumpoutflux){
+  # apply mass loss to outmass array
+  if(outmass && outmass.array){
+    if(tlumpoutmass){
       ptl[, out[C, R, L] <<- sum(ml), by = list(C, R, L)]
     }else{
       ptl[, out[C, R, L, timestep] <<- sum(ml), by = list(C, R, L, timestep)]
     }
   }
-  if(react.loss && outflux.array){
-    if(tlumpoutflux){
+  if(react.loss && outmass.array){
+    if(tlumpoutmass){
       ptl[, outr[C, R, L] <<- sum(mrl), by = list(C, R, L)]
     }else{
       ptl[, outr[C, R, L, timestep] <<- sum(mrl), by = list(C, R, L, timestep)]
@@ -393,12 +452,12 @@ MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
   }
 
   # unneeded columns
-  set(ptl, NULL, c("Qimb", "V", if(outflux && outflux.array) "ml",
-                   if(react.loss && outflux.array) "mrl"), NULL)
+  set(ptl, NULL, c("Qimb", "V", if(outmass && outmass.array) "ml",
+                   if(react.loss && outmass.array) "mrl"), NULL)
 
   # package results into list
-  res <- list(outflux = if(outflux && outflux.array) out,
-              reactloss = if(react.loss && outflux.array) outr,
+  res <- list(outmass = if(outmass && outmass.array) out,
+              reactloss = if(react.loss && outmass.array) outr,
               loss = if(loss) loss1, traces = ptl)
   return(res[!sapply(res, is.null)])
 }
