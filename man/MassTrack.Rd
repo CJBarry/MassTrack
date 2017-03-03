@@ -61,7 +61,7 @@ specify the end time of the simulation; if missing, it will be inferred
  as or just after they arrive}
 }
 \value{
-A list of results:
+A list of results:\cr
 $trace, data.table: the pathline data table with new columns for mass
  and, if \code{outmass.array = FALSE}, mass loss and reactive mass
  loss\cr
