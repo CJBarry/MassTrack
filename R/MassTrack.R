@@ -91,12 +91,12 @@ PTL.headers <- c("ptlno", "x", "y", "z_off", "z",
 #' @examples
 #' # to follow
 #'
-ptl.masstrack2 <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
-                           phi, m0 = 1,
-                           retain.storage = TRUE, truncate = TRUE,
-                           confined = FALSE, outflux = TRUE, loss = TRUE,
-                           outflux.array = TRUE, tlumpoutflux = FALSE,
-                           linear.decay = FALSE, react.loss = TRUE, end.t){
+MassTrack <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
+                      phi, m0 = 1,
+                      retain.storage = TRUE, truncate = TRUE,
+                      confined = FALSE, outflux = TRUE, loss = TRUE,
+                      outflux.array = TRUE, tlumpoutflux = FALSE,
+                      linear.decay = FALSE, react.loss = TRUE, end.t){
   gwnc <- switch(class(gwnc),
                  NetCDF = gwnc,
                  character = open.nc(gwnc),
@@ -285,7 +285,7 @@ ptl.masstrack2 <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
 
   ## initial masses - may be single value, vector for each particle or
   ##  function of start time
-  loss1 <- 0 #ensure exists
+  loss1 <- 0 # ensure loss1 exists
   m0p <- if(is.vector(m0)){
     if(identical(lnm0 <- length(m0), 1L)) rep(m0, max(ptl$ptlno)) else{
       if(identical(lnm0, length(unique(ptl$ptlno)))){
@@ -293,10 +293,10 @@ ptl.masstrack2 <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
         m0tmp[unique(ptl$ptlno)] <- m0
         m0tmp
       }else if(lnm0 >= max(ptl$ptlno)){
-        #loss records mass not released due to particle being stranded, but
-        #  cannot pick up particles that were not released because they
-        #  were outside the model domain, because such particles are not
-        #  recorded by MODPATH
+        # loss records mass not released due to particle being stranded, but
+        #   cannot pick up particles that were not released because they
+        #   were outside the model domain, because such particles are not
+        #   recorded by MODPATH
         if(loss) loss1 <- ifelse(1:lnm0 %in% ptl$ptlno, 0, m0)
         m0
       }else stop("invalid m0: ",
@@ -327,7 +327,7 @@ ptl.masstrack2 <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
   ## apply MassTrack calculations on each pathline
   # .N is the number of rows within the ptlno group
   ptl[, c("m", if(outflux) "ml", if(react.loss) "mrl") := if(identical(.N, 1L)){
-    #case in which there is only one entry for the particle (probably instant capture)
+    # case in which there is only one entry for the particle (probably instant capture)
     pVdiff <- Qimb*totdur/V
 
     m1 <- m0p[ptlno]*ifelse(pVdiff < 0, ifelse(pVdiff < -1, 0, 1 + pVdiff), 1)
@@ -339,16 +339,16 @@ ptl.masstrack2 <- function(ptl = "pathline", gwnc, wtop = "wtop.nc",
       ml1 <- ml1nd*exp(-linear.decay*totdur/exp(1))
     }
 
-    #linear decay - mass is removed after abstractions given to outmass
+    # linear decay - mass is removed after abstractions given to outmass
     if(linear.decay && m1){
       m1nd <- m1
       m1 <- m1nd*exp(-linear.decay*totdur)
     }else m1nd <- 0
 
-    #mass loss due to reaction
+    # mass loss due to reaction
     if(react.loss) mrl1 <- m1nd - m1 + if(outflux) ml1nd - ml1 else 0
 
-    #return final mass and mass loss
+    # return final mass and mass loss
     mget(c("m1", if(outflux) "ml1", if(react.loss) "mrl1"))
   }else{
 
